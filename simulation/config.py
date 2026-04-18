@@ -33,6 +33,9 @@ BATTERY_VOLTAGE = 3.7   # Nonimal battery voltage (V)
 BATTERY_EFFICIENCY=0.95     # Round-trip charge/discharge efficiency(95%)
 MIN_STATE_OF_CHARGE=0.2     # Minimum safe charge level (20%)
 MAX_STATE_OF_CHARGE=0.95    # Maximum safe charge level (95%)
+BATTERY_WARNING_THRESHOLD = 0.35    # Warn when charge drops below 35%
+BATTERY_CRITICAL_THRESHOLD = 0.25   # Critical warning below 25%
+# MIN_STATE_OF_CHARGE = 0.20 already defined — cell deactivates here
  
 # Operating conditions 
 OPERATING_TEMP = 298.15     # Operating temperature in Kelvin (25 degrees C)
