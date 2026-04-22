@@ -3,6 +3,8 @@
 # Steps through time, logs results, and outputs a full data set for plotting. 
 
 import math
+import os
+import random
 from config import OPERATING_TEMP, AMBIENT_TEMP
 from solar_model import panel_power, panel_voltage
 from battery import BatteryModel
@@ -14,29 +16,6 @@ TIMESTEP_MINUTES = 10
 TIMESTEP_HOURS = TIMESTEP_MINUTES / 60
 SIMULATION_HOURS = 12       # Simulate a 12 hr daylight window
 TOTAL_STEPS =  int(SIMULATION_HOURS * 60 / TIMESTEP_MINUTES)
-
-def solar_profile(hour):
-    """
-    Models irradiance across a day using simple sine curve. 
-    Peaks at noon ( hour 6 of 12) at 1000 W/m^2
-    hour    : hour into simulated day (0 to 12)
-    returns : irradiance in W/m^2 
-    """
-    if hour < 0 or hour > SIMULATION_HOURS:
-        return 0
-    irradiance = 1000 * math.sin(math.pi * hour / SIMULATION_HOURS)
-    return max(0, irradiance)
-
-def temperature_profile(hour):
-    """
-    Models panel temperature across the day. 
-    Cool in morning, hot at peak sun. 
-    returns : panel temperature in Celsius (C)
-    """
-    base_temp= 20
-    peak_gain=25
-    temp = base_temp + peak_gain * math.sin(math.pi * hour / SIMULATION_HOURS)
-    return temp
 
 # ── DEFAULT SCENARIO ─────────────────────────────────────────────────
 DEFAULT_SCENARIO = {
@@ -52,15 +31,27 @@ DEFAULT_SCENARIO = {
 
 def solar_profile(hour, scenario):
     """
-    Models irradiance using a sine curve across the scenario's daylight window.
+    Models irradiance using a sine curve with realistic outdoor variability.
+
+    Two noise layers are always applied:
+      - Cloud events: 12% chance per timestep of a 30-70% irradiance drop
+      - Atmospheric scatter: ±5% multiplicative noise every timestep
     """
     total_hours = scenario["simulation_hours"]
     peak = scenario["peak_irradiance"]
 
     if hour < 0 or hour > total_hours:
         return 0
-    irradiance = peak * math.sin(math.pi * hour / total_hours)
-    return max(0, irradiance)
+
+    base_irradiance = peak * math.sin(math.pi * hour / total_hours)
+
+    cloud_factor = 1.0
+    if random.random() < 0.12:
+        cloud_factor = random.uniform(0.30, 0.70)
+
+    noise = random.uniform(0.95, 1.05)
+
+    return max(0, base_irradiance * cloud_factor * noise)
 
 
 def temperature_profile(hour, scenario):
@@ -189,27 +180,88 @@ SCENARIOS = {
         "peak_temperature"    : 35,
         "ambient_temperature" : 20,
     },
+    "chaotic_clear_day": {
+        "target_current"      : 1.0,
+        "initial_soc"         : 0.8,
+        "simulation_hours"    : 12,
+        "timestep_minutes"    : 10,
+        "peak_irradiance"     : 1000,
+        "peak_temperature"    : 50,
+        "ambient_temperature" : 22,
+        "chaotic"             : True,   # enables atmospheric scatter + cloud events
+    },
+    "high_current": {
+        "target_current"      : 2.5,
+        "initial_soc"         : 0.8,
+        "simulation_hours"    : 12,
+        "timestep_minutes"    : 10,
+        "peak_irradiance"     : 1000,
+        "peak_temperature"    : 50,
+        "ambient_temperature" : 22,
+    },
+    "cloudy_high_current": {
+        "target_current"      : 2.5,
+        "initial_soc"         : 0.8,
+        "simulation_hours"    : 12,
+        "timestep_minutes"    : 10,
+        "peak_irradiance"     : 400,
+        "peak_temperature"    : 28,
+        "ambient_temperature" : 18,
+    },
 }
 
 
 if __name__ == "__main__":
-    # Run the default scenario
-    print("=== Running default scenario ===\n")
-    data = run_simulation(SCENARIOS["clear_summer_day"])
+    # Deferred import to avoid circular dependency (plotter imports from system_sim at module level)
+    from plotter import (plot_system_over_time, plot_vi_curve,
+                         plot_hydrogen_vs_current, plot_efficiency_curve)
 
-    print(f"{'Hour':<8} {'Irr (W/m²)':<12} {'Solar (W)':<12} {'Delivered (W)':<15} {'SOC':<8} {'H2 (L)':<10}")
-    print("-" * 70)
-    for row in data[::6]:
-        print(f"{row['hour']:<8.2f} {row['irradiance']:<12.1f} {row['solar_power']:<12.4f} "
-              f"{row['delivered_power']:<15.4f} {row['battery_soc']:<8.1%} {row['h2_liters']:<10.6f}")
+    comparison_runs = [
+        ("high_current",        "high_current",        "plot_high_current.png",        1),
+        ("cloudy_day",          "cloudy",              "plot_cloudy.png",              2),
+        ("cloudy_high_current", "cloudy_high_current", "plot_cloudy_high_current.png", 3),
+    ]
 
-    total_h2 = sum(row["h2_liters"] for row in data)
-    print(f"\nTotal hydrogen: {total_h2:.4f} L")
+    for scenario_key, folder, filename, seed in comparison_runs:
+        random.seed(seed)
+        scenario = SCENARIOS[scenario_key]
+        out_dir  = os.path.join("data", folder)
+        os.makedirs(out_dir, exist_ok=True)
+        save_path = os.path.join(out_dir, filename)
 
-    # Run the V-I sweep
-    print("\n=== Running V-I sweep ===\n")
-    sweep = run_vi_sweep(0.1, 3.0, 0.2)
-    print(f"{'Current (A)':<12} {'V_act':<10} {'V_ohm':<10} {'V_total':<10}")
-    print("-" * 45)
-    for row in sweep:
-        print(f"{row['current']:<12.2f} {row['activation']:<10.4f} {row['ohmic']:<10.4f} {row['total']:<10.4f}")
+        data = run_simulation(scenario)
+
+        total_h2  = sum(row["h2_liters"] for row in data)
+        min_soc   = min(row["battery_soc"] for row in data)
+        statuses  = {row["battery_status"] for row in data}
+
+        print(f"\n{'=' * 50}")
+        print(f"  Scenario : {scenario_key.replace('_', ' ').title()}")
+        print(f"  Current  : {scenario['target_current']} A  |  Peak irradiance: {scenario['peak_irradiance']} W/m²")
+        print(f"  Total H2 : {total_h2:.4f} L")
+        print(f"  Min SOC  : {min_soc:.1%}")
+        print(f"  Warning  : {'YES' if 'warning'  in statuses else 'no'}")
+        print(f"  Critical : {'YES' if 'critical' in statuses else 'no'}")
+        print(f"  Plot     : {save_path}")
+
+        # Re-seed so plot_system_over_time's internal run_simulation sees the
+        # same random sequence and matches what the summary above printed.
+        random.seed(seed)
+        plot_system_over_time(scenario_name=scenario_key, save_path=save_path)
+
+        op_current = scenario["target_current"]
+        plot_vi_curve(
+            save_path=os.path.join(out_dir, "plot_vi_curve.png"),
+            operating_current=op_current,
+        )
+        plot_hydrogen_vs_current(
+            save_path=os.path.join(out_dir, "plot_hydrogen_vs_current.png"),
+            operating_current=op_current,
+        )
+        plot_efficiency_curve(
+            save_path=os.path.join(out_dir, "plot_efficiency_curve.png"),
+            operating_current=op_current,
+        )
+
+    print(f"\n{'=' * 50}")
+    print("All scenarios complete.")

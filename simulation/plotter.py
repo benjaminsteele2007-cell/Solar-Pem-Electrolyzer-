@@ -12,10 +12,11 @@ from system_sim import run_simulation, run_vi_sweep, SCENARIOS
 from faraday import calculate_production_rate
 
 
-def plot_vi_curve(save_path=None):
+def plot_vi_curve(save_path=None, operating_current=None):
     """
     Plot 1 — V-I curve with stacked overpotential breakdown.
     Shows how much voltage each loss mechanism contributes at every current.
+    operating_current : if provided, draws a vertical marker at that operating point.
     """
     data = run_vi_sweep(current_min=0.05, current_max=3.0, step=0.05)
 
@@ -47,6 +48,12 @@ def plot_vi_curve(save_path=None):
     # Total voltage line
     ax.plot(currents, total, color="black", linewidth=2, label="Total cell voltage")
 
+    if operating_current is not None:
+        v_at_op = next(row["total"] for row in data
+                       if abs(row["current"] - operating_current) < 0.026)
+        ax.axvline(x=operating_current, color="red", linestyle="--", linewidth=1.5,
+                   label=f"Operating point — {operating_current}A / {v_at_op:.3f}V")
+
     ax.set_xlabel("Current (A)")
     ax.set_ylabel("Voltage (V)")
     ax.set_title("Predicted V-I Curve — Overpotential Breakdown")
@@ -60,7 +67,7 @@ def plot_vi_curve(save_path=None):
     plt.show()
 
 
-def plot_system_over_time(scenario_name="clear_summer_day", save_path=None):
+def plot_system_over_time(scenario_name="chaotic_clear_day", save_path=None):
     """
     Plot 2 — Solar, battery, and delivered power across a simulated day.
     Shows the battery's role as a buffer between variable solar and steady demand.
@@ -96,16 +103,27 @@ def plot_system_over_time(scenario_name="clear_summer_day", save_path=None):
     plt.show()
 
 
-def plot_hydrogen_vs_current(save_path=None):
+def plot_hydrogen_vs_current(save_path=None, operating_current=None):
     """
     Plot 3 — Hydrogen production rate as a function of current.
     Demonstrates Faraday's law — perfectly linear relationship.
+    operating_current : if provided, draws a crosshair marker at that operating point.
     """
     currents = [i * 0.1 for i in range(1, 31)]  # 0.1A to 3.0A
     rates = [calculate_production_rate(i) for i in currents]
 
     fig, ax = plt.subplots(figsize=(9, 6))
     ax.plot(currents, rates, color="#2a7fbf", linewidth=2, marker="o", markersize=4)
+
+    if operating_current is not None:
+        rate_at_op = calculate_production_rate(operating_current)
+        ax.axvline(x=operating_current, color="red", linestyle="--", linewidth=1.5)
+        ax.axhline(y=rate_at_op, color="red", linestyle=":", linewidth=1, alpha=0.6)
+        ax.annotate(f"{operating_current}A → {rate_at_op:.3f} L/hr",
+                    xy=(operating_current, rate_at_op),
+                    xytext=(operating_current + 0.15, rate_at_op - 0.04),
+                    color="red", fontsize=9)
+
     ax.set_xlabel("Operating current (A)")
     ax.set_ylabel("Hydrogen production rate (L/hr)")
     ax.set_title("Hydrogen Production vs Current — Faraday's Law")
@@ -116,11 +134,12 @@ def plot_hydrogen_vs_current(save_path=None):
     plt.show()
 
 
-def plot_efficiency_curve(save_path=None):
+def plot_efficiency_curve(save_path=None, operating_current=None):
     """
     Plot 4 — Voltaic efficiency as a function of current.
     Efficiency = thermoneutral voltage / actual voltage.
     Reveals the operating sweet spot.
+    operating_current : if provided, draws a vertical marker at that operating point.
     """
     data = run_vi_sweep(current_min=0.05, current_max=3.0, step=0.05)
 
@@ -129,6 +148,14 @@ def plot_efficiency_curve(save_path=None):
 
     fig, ax = plt.subplots(figsize=(9, 6))
     ax.plot(currents, efficiency, color="#6b9e3f", linewidth=2)
+
+    if operating_current is not None:
+        eff_at_op = next(1.48 / row["total"] * 100 for row in data
+                         if abs(row["current"] - operating_current) < 0.026)
+        ax.axvline(x=operating_current, color="red", linestyle="--", linewidth=1.5,
+                   label=f"Operating point — {operating_current}A / {eff_at_op:.1f}%")
+        ax.legend(loc="upper right")
+
     ax.set_xlabel("Operating current (A)")
     ax.set_ylabel("Voltaic efficiency (%)")
     ax.set_title("Cell Efficiency vs Operating Current")
@@ -142,10 +169,8 @@ def plot_efficiency_curve(save_path=None):
 
 if __name__ == "__main__":
     print("Generating all plots...")
-    if __name__ == "__main__":
-        print ("Generating all plots...")
-        plot_vi_curve(save_path="data/plot_vi_curve.png")
-        plot_system_over_time(save_path="data/plot_system_over_time.png")
-        plot_hydrogen_vs_current(save_path="data/plot_hydrogen_vs_current.png")
-        plot_efficiency_curve(save_path="data/plot_efficiency_curve.png")
-        print("Done. Plots saved to /data folder.")
+    plot_vi_curve(save_path="data/plot_vi_curve.png")
+    plot_system_over_time(save_path="data/plot_system_over_time.png")
+    plot_hydrogen_vs_current(save_path="data/plot_hydrogen_vs_current.png")
+    plot_efficiency_curve(save_path="data/plot_efficiency_curve.png")
+    print("Done. Plots saved to /data folder.")

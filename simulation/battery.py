@@ -50,6 +50,10 @@ class BatteryModel:
         """
         net_power = solar_power - cell_power
 
+        if self.soc <= MIN_STATE_OF_CHARGE and net_power < 0:
+            self.status = "deactivated"
+            return 0
+
         if net_power > 0:
             self.status = "charging"
             energy_in = net_power * timestep_hours * BATTERY_EFFICIENCY
@@ -61,6 +65,7 @@ class BatteryModel:
             self.status = "discharging"
             energy_out = abs(net_power) * timestep_hours / BATTERY_EFFICIENCY
             self.soc -= energy_out / BATTERY_ENERGY_MAX
+            self.soc = max(self.soc, MIN_STATE_OF_CHARGE)
             delivered_power = cell_power
 
         else:
