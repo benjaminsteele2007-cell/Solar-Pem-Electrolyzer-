@@ -26,6 +26,10 @@ PANEL_WATTAGE = 10.0    # Rated panel output (w)
 PANEL_EFFICIENCY= 0.18  # Panel efficiency (18%)[subject to change]
 STANDARD_IRRADIANCE= 1000   # Standard test condition irradiance (W/m^2)[subject to change]
 PANEL_AREA = 0.067  # Panel Area (m^2)
+PANEL_VOC = 21.6         # Open circuit voltage (V)
+PANEL_VMP = 17.8         # Voltage at max power point (V)
+PANEL_IMP = 0.56         # Current at max power point (A)
+PANEL_ISC = 0.62         # Short circuit current (A)
 
 # Buffer Battery Specs
 BATTERY_CAPACITY = 3000     # Battery capacity (mAh)
